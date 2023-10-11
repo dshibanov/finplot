@@ -4,3 +4,5 @@ build/
 dumb/
 *.egg-info/
 screenshot.png
+examples
+todo.md
