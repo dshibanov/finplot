@@ -1413,11 +1413,16 @@ class ScatterLabelItem(FinPlotItem):
         return self.viewRect()
 
 
-def create_plot(title='Finance Plot', rows=1, init_zoom_periods=1e10, maximize=True, yscale='linear'):
+def create_plot(title='Finance Plot', rows=1, init_zoom_periods=1e10, maximize=True, yscale='linear', header_size=40):
     pg.setConfigOptions(foreground=foreground, background=background)
     win = FinWindow(title)
     # normally first graph is of higher significance, so enlarge
-    win.ci.layout.setRowStretchFactor(0, top_graph_scale)
+    if header_size > 0:
+        win.ci.layout.setRowFixedHeight(0, header_size)
+        win.ci.layout.setRowStretchFactor(1, top_graph_scale)
+    else:
+        win.ci.layout.setRowStretchFactor(0, top_graph_scale)
+
     win.show_maximized = maximize
     ax0 = axs = create_plot_widget(master=win, rows=rows, init_zoom_periods=init_zoom_periods, yscale=yscale)
     axs = axs if type(axs) in (tuple,list) else [axs]
