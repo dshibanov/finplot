@@ -9,13 +9,14 @@ import requests
 
 
 baseurl = 'https://www.bitmex.com/api'
+fplt.timestamp_format = '%m/%d/%Y %H:%M:%S.%f'
 
 
 def local2timestamp(s):
     return int(dateutil.parser.parse(s).timestamp())
 
 
-def download_price_history(symbol='XBTUSD', start_time='2020-01-10', end_time='2020-05-07', interval_mins=60):
+def download_price_history(symbol='XBTUSD', start_time='2023-01-01', end_time='2023-10-29', interval_mins=60):
     start_time = local2timestamp(start_time)
     end_time = local2timestamp(end_time)
     data = defaultdict(list)
@@ -59,7 +60,6 @@ def plot_heikin_ashi(df, ax):
     for i,hc in zip(df.index, df['h_close']):
         df.loc[i, 'h_open'] = ho
         ho = (ho + hc) / 2
-    print(df['h_open'])
     df['h_high'] = df[['high','h_open','h_close']].max(axis=1)
     df['h_low'] = df[['low','h_open','h_close']].min(axis=1)
     df[['h_open','h_close','h_high','h_low']].plot(ax=ax, kind='candle')
@@ -97,7 +97,7 @@ def plot_rsi(df, ax):
     df['rsi'] = 100 - (100/(1+rs))
     df.rsi.plot(ax=ax, legend='RSI')
     fplt.set_y_range(0, 100, ax=ax)
-    fplt.add_band(30, 70, ax=ax)
+    fplt.add_horizontal_band(30, 70, ax=ax)
 
 
 def plot_vma(df, ax):
