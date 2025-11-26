@@ -14,6 +14,7 @@ from functools import lru_cache
 import numpy as np
 import subprocess
 import shlex
+import json
 
 BG_LIGHT='light'
 BG_DARK='dark'
@@ -66,6 +67,28 @@ def get_color(i):
         i = i % len(plot_on_main_colors)
     return plot_on_main_colors[i]
 
+
+
+import pandas as pd
+from decimal import Decimal
+from datetime import datetime
+
+def json_default(o):
+    if isinstance(o, pd.Timestamp):
+        return {"__type__": "timestamp", "value": o.isoformat()}
+
+    if isinstance(o, datetime):
+        return {"__type__": "datetime", "value": o.isoformat()}
+
+    if isinstance(o, Decimal):
+        return {"__type__": "decimal", "value": str(o)}
+
+    # You can add ExchangePair, Trade, etc:
+    # return {"__type__": "ExchangePair", "value": str(o)}
+    
+    return str(o)
+
+
 def plot(metrics):
 
     set_gruvbox()
@@ -79,6 +102,8 @@ def plot(metrics):
     info = plot_params.get('info', '')
 
     print(plot_params)
+
+    fplt.y_pad = 0.1
 
 
     def get_symbol_name(config, code):
@@ -113,9 +138,10 @@ def plot(metrics):
     # loop by symbols
     symbol_codes = track['symbol_code'].unique()
     for s in symbol_codes:
-        header, ax1, ax2, ax3, ax4, ax5, ax6 = fplt.create_plot(title ='test plot', rows=7)
-        header.grid = False
-        fplt.add_legend(f"test_name: , date: , hash: {get_last_hash()}, symbol: {get_symbol_name(metrics['config'], s)}", ax=header)
+        # header, ax1, ax2, ax3, ax4, ax5, ax6 = fplt.create_plot(title ='test plot', rows=7)
+        ax1, ax2, ax3, ax4, ax5, ax6 = fplt.create_plot(title ='test plot', rows=6)
+        # header.grid = False
+        # fplt.add_legend(f"test_name: , date: , hash: {get_last_hash()}, symbol: {get_symbol_name(metrics['config'], s)}", ax=ax1)
         ax1.grid = False
 
         current_symbol_track = track[track['symbol_code'] == s]
@@ -167,11 +193,89 @@ def plot(metrics):
             current_symbol_track["sell"].iloc[-1] = current_symbol_track["0_price"].iloc[-1]
             trades.append({"time":index, "price":current_symbol_track["0_price"].iloc[-1]})
 
+
+
+
         fplt.plot(current_symbol_track['buy'], ax=ax1, color='#076678', style='>', legend='buy', width=2)
         fplt.plot(current_symbol_track['sell'], ax=ax1, color='#cc241d', style='<', legend='sell', width=2)
         while i+1 < len(trades):
             fplt.add_line((trades[i]["time"], trades[i]["price"]), (trades[i+1]["time"], trades[i+1]["price"]), color='#e3242b', interactive=False, ax=ax1, style='_')
             i += 2
+
+
+        def get_order_color(order):
+            if hasattr(order, 'tp') and order.tp == True:
+                # return '#028A0F'
+                return '#03AC13'
+
+            if hasattr(order, 'sl') and order.sl == True:
+                return '#FF0000'
+
+            if order.type == 'LIMIT' or order.type == 'STOP': 
+                return '#1A43BF' if order.is_buy else '#FF0000'
+
+        def plot_order(order):
+            fplt.add_line((order.start_time, order.price), 
+                          (order.end_time, order.price), 
+                          color=get_order_color(order), 
+                          interactive=False, 
+                          ax=ax1, 
+                          style='-.')
+                          # style='.')
+
+            if hasattr(order, 'origin'):
+                fplt.add_line((order.start_time, order.price), 
+                              order.origin, 
+                              color=get_order_color(order), 
+                              interactive=False, 
+                              ax=ax1, 
+                              style='-.')
+
+        y_min, y_max = min(current_symbol_track['0_price']), max(current_symbol_track['0_price'])
+        print(y_max, y_min)
+        for o in metrics['orders']:
+            if o.end is None:
+                o.end = len(current_symbol_track) - 1
+
+            o.start_time = current_symbol_track.index[o.start]
+            o.end_time = current_symbol_track.index[o.end]
+            plot_order(o)
+
+            if o.price > y_max:
+                y_max = o.price
+
+            if o.price < y_min:
+                y_min = o.price
+
+            if o._linked:
+                for l in o._linked:
+                    if l.end is None:
+                        l.end = len(current_symbol_track) - 1
+
+                    l.start_time = current_symbol_track.index[l.start]
+                    l.end_time = current_symbol_track.index[l.end]
+                    
+                    if l.type == 'limit':
+                        l.tp = True
+                    elif l.type == 'stop':
+                        l.sl = True
+
+                    l.origin = (o.end_time, float(o.price))
+                    plot_order(l)
+
+                    if l.price > y_max:
+                        y_max = l.price
+
+                    if l.price < y_min:
+                        y_min = l.price
+
+            print(json.dumps(o, indent=2, sort_keys=True, default=json_default))
+
+
+
+        print(y_max, y_min)
+        print(type(y_max), type(y_min))
+        fplt.set_y_range(0.0001, float(y_max), ax=ax1)
 
         fplt.show()
 
@@ -180,113 +284,3 @@ def plot(metrics):
         track.to_csv(f'test_track_{suffix}.csv', index=False)
     return
 
-
-    # # ------ 
-    # # fplt.axis_height_factor = {0: 2} # top axis is twice as tall as the others
-    # # ax1, ax2 = fplt.create_plot(title = title, rows=2)
-    # ax1 = fplt.create_plot(title=title)
-    # track.plot('net_worth', ax=ax1, legend='net_worth', title='some title')
-    # # track.plot('price', ax=ax2, legend='close', linestyle='solid', width=1.5, color='black', grid=False)
-    # track.plot('price', ax=ax1, legend='close', linestyle='solid', width=1.5, color='black', grid=False)
-
-    # fplt.show()
-    # return
-
-
-    # # ------
-    # _trades=[]
-    # for t in trades:
-    #     trade = trades[t]
-    #     _trades.append(trade)
-    #     step = trade[0].step
-
-    #     order_price = float(trade[0].price.real)
-    #     if trade[0].side.value == 'buy':
-    #         track.loc[(track.index == track.index[trade[0].step]), 'buy'] = order_price #float(trade[0].price.real)
-    #         # track.at[trade[0].step, 'buy'] = order_price  # float(trade[0].price.real)
-    #     else:
-    #         # track.loc[(track.index == trade[0].step), 'sell'] = order_price #float(trade[0].price.real)
-    #         track.loc[(track.index == track.index[trade[0].step]), 'sell'] = order_price
-
-    # track["buy"].iloc[0:len(track)-1] = track["buy"].iloc[1:len(track)]
-    # track["sell"].iloc[0:len(track)-1] = track["sell"].iloc[1:len(track)]
-
-    # set_gruvbox(bg=bg)
-
-    # if info != '':
-    #     header, ax1, ax2, ax3, ax4, ax5, ax6 = fplt.create_plot(title ='test plot', rows=7)
-    #     header.grid = False
-    #     fplt.add_legend(f"{info}", ax=header)
-    # else:
-    #     # ax1, ax2, ax3, ax4, ax5, ax6 = fplt.create_plot(title ='test plot', rows=6)
-    #     ax1, ax2 = fplt.create_plot(title = title, rows=2)
-
-    # ax1.grid = False
-
-    # fplt.axis_height_factor = {0: 2} # top axis is twice as tall as the others
-
-    # track.plot('net_worth', ax=ax1, legend='net_worth', title='some title')
-    # # track.plot('close', ax=ax1, legend='Price close', linestyle='solid', width=1.5, color='black', grid=False)
-    # track.plot('price', ax=ax2, legend='close', linestyle='solid', width=1.5, color='black', grid=False)
-    # # track.plot('reward', ax=ax3, legend='reward')
-    # # track.plot('action', ax=ax4, legend='action')
-
-    # fplt.show()
-    # return
-    #     # Adding SMA lines
-    # # if 'sma_fast' in track.columns and 'sma_slow' in track.columns:
-    # #     track.plot('sma_fast', ax=ax1, legend='Fast SMA', color='green', width=1.5)
-    # #     track.plot('sma_slow', ax=ax1, legend='Slow SMA', color='red', width=1.5)
-
-    # # # line styles
-    # # # https://matplotlib.org/stable/gallery/lines_bars_and_markers/linestyles.html
-    # # track.plot('end_of_episode', ax=ax5, legend='end_of_episode', color='#cc241d')
-    # # track.plot('symbol_code', ax=ax6, legend='symbol_code', color='#cc241d')
-    # # ax1.set_visible(xgrid=True, ygrid=True)
-    # ax1.set_visible(xgrid=False, ygrid=False)
-
-    # # fplt.add_band((30), (35), color='#076678', ax=ax3)
-    # # fplt.add_rect((100,100), (200,200), color='#cc241d', interactive=False, ax=None)
-    # # fplt.add_text((150,150), 'texttexttext', color='#076678', anchor=(0,0), ax=ax1)
-
-    # # make info string here
-    # # print lines between open and close
-    # _open = False
-    # i = 0
-    # import math
-    # trades=[]
-    # last_order_side = ''
-    # # for index, row in df.iterrows():
-
-    # # print(" 2 ")
-    # # pprint(track)
-    # for index, row in track.iterrows():
-    #     if math.isnan(row["buy"]) == False and math.isnan(row["sell"]) == False:
-    #         print("ERROR: simultanious bus/sell .. at #", index)
-
-    #     if math.isnan(row["buy"]) == False :
-    #         trades.append({"time":index, "price":row["buy"]})
-    #         last_order_side = 'buy'
-
-    #     if math.isnan(row["sell"]) == False:
-    #         trades.append({"time":index, "price":row["sell"]})
-    #         last_order_side = 'sell'
-
-    # if last_order_side == 'buy':
-    #     track["sell"].iloc[-1] = track["close"].iloc[-1]
-    #     trades.append({"time":index, "price":track["close"].iloc[-1]})
-
-    # # print(" 3 ")
-    # # pprint(track['buy'].head(100))
-    # # print(track['buy'].head(100))
-    # fplt.plot(track['buy'], ax=ax1, color='#076678', style='>', legend='buy', width=2)
-    # fplt.plot(track['sell'], ax=ax1, color='#cc241d', style='<', legend='sell', width=2)
-    # while i+1 < len(trades):
-    #     # fplt.add_line((trades[i]["time"], trades[i]["price"]), (trades[i+1]["time"], trades[i+1]["price"]), color='#3c3836', interactive=False, ax=ax1, style='_')
-    #     fplt.add_line((trades[i]["time"], trades[i]["price"]), (trades[i+1]["time"], trades[i+1]["price"]), color='#e3242b', interactive=False, ax=ax1, style='_')
-    #     i += 2
-
-    # fplt.show()
-
-    # if save_track:
-    #     track.to_csv(f'test_track_{suffix}.csv', index=False)
